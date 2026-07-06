@@ -561,7 +561,7 @@ def prepare_text_for_speech(raw_text: str) -> str:
 
 def _generate_mp3_bytes(text: str) -> bytes:
     buf = io.BytesIO()
-    gTTS(text=text, lang="fa").write_to_fp(buf)
+    gTTS(text=text, lang="fa", lang_check=False).write_to_fp(buf)
     return buf.getvalue()
 
 
