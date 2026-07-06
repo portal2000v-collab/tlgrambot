@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>حکم چهارنفره</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <div id="lobby" class="screen">
+      <h1>🃏 حکم</h1>
+      <p id="lobby-status">در حالِ اتصال به میز...</p>
+      <div id="seat-list"></div>
+    </div>
+
+    <div id="table" class="screen hidden">
+      <div class="topbar">
+        <div class="score">
+          <span class="team-a">تیمِ A: <b id="score-a">0</b></span>
+          <span class="team-b">تیمِ B: <b id="score-b">0</b></span>
+        </div>
+        <div class="hokm-indicator" id="hokm-indicator">حکم: —</div>
+      </div>
+
+      <div class="board">
+        <div class="seat seat-top" id="seat-2"><div class="avatar"></div><div class="seat-name"></div><div class="card-count"></div></div>
+        <div class="seat seat-left" id="seat-1"><div class="avatar"></div><div class="seat-name"></div><div class="card-count"></div></div>
+        <div class="seat seat-right" id="seat-3"><div class="avatar"></div><div class="seat-name"></div><div class="card-count"></div></div>
+
+        <div class="felt">
+          <div class="trick-slot trick-2" id="trick-2"></div>
+          <div class="trick-slot trick-1" id="trick-1"></div>
+          <div class="trick-slot trick-3" id="trick-3"></div>
+          <div class="trick-slot trick-0" id="trick-0"></div>
+          <div class="turn-banner" id="turn-banner"></div>
+        </div>
+
+        <div class="seat seat-bottom" id="seat-0"><div class="avatar"></div><div class="seat-name"></div><div class="card-count"></div></div>
+      </div>
+
+      <div class="log" id="log"></div>
+
+      <div class="hand" id="hand"></div>
+    </div>
+
+    <div id="hokm-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2>حکم رو انتخاب کن</h2>
+        <div class="suit-choices">
+          <button class="suit-btn suit-red" data-suit="H">♥</button>
+          <button class="suit-btn suit-red" data-suit="D">♦</button>
+          <button class="suit-btn suit-black" data-suit="S">♠</button>
+          <button class="suit-btn suit-black" data-suit="C">♣</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="round-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2 id="round-modal-text"></h2>
+        <button id="next-round-btn">دورِ بعد</button>
+      </div>
+    </div>
+
+    <div id="gameover-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2 id="gameover-text"></h2>
+      </div>
+    </div>
+
+  </div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
