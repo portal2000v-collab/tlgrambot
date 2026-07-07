@@ -1724,7 +1724,6 @@ async def handle_chess_resign(query, context: ContextTypes.DEFAULT_TYPE):
 def generate_room_code() -> str:
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-
 async def hokm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not HOKM_WEBAPP_URL:
         await update.message.reply_text(
@@ -1736,7 +1735,10 @@ async def hokm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room_id = generate_room_code()
     hokm_rooms[chat_id] = {"room_id": room_id, "created_by": update.effective_user.id}
     url = f"{HOKM_WEBAPP_URL.rstrip('/')}/?room={room_id}"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🃏 ورود به میزِ حکم", web_app=WebAppInfo(url=url))]])
+    if update.message.chat.type == "private":
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🃏 ورود به میزِ حکم", web_app=WebAppInfo(url=url))]])
+    else:
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🃏 ورود به میزِ حکم", url=url)]])
     await update.message.reply_text(
         f"🃏 میزِ حکم ساخته شد! کدِ میز: <code>{room_id}</code>\n"
         "این دکمه رو بزن (یا لینک رو با ۳ نفرِ دیگه شریک کن، هرکی همین دکمه رو بزنه میاد سرِ همین میز).",
