@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import jdatetime
 import requests
-from gtts import gTTS
+import edge_tts
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile,
     ReactionTypeEmoji, WebAppInfo,
@@ -63,8 +63,9 @@ if not CEREBRAS_KEY:
 # با بقیه جمع می‌شه؛ یعنی هرچی بیشتر ست کنی، ربات کمتر با پیام "جواب نداد" مواجه می‌شه.
 
 # ---------- چند سرویس هوش مصنوعی، هرکدوم با کلید و سهمیه‌ی جدا ----------
-# ترتیبِ امتحان‌کردن: Groq (سریع‌تر) -> Cerebras -> Gemini -> SambaNova -> Together -> OpenRouter -> Mistral
-# روی خطای ۴۲۹ (سقفِ رایگان تموم‌شده) خودکار میره سراغِ بعدی.
+# استراتژی: تو حالتِ عادی همیشه اول از Gemini کمک می‌گیریم (اصلی‌ترین سرویس). فقط وقتی
+# سهمیه‌ی رایگانِ Gemini تموم بشه (خطای ۴۲۹ / RESOURCE_EXHAUSTED)، می‌ریم سراغِ بقیه، یکی‌یکی
+# به‌ترتیب: Groq -> Cerebras -> SambaNova -> Together -> OpenRouter -> Mistral.
 
 client = genai.Client(api_key=GEMINI_KEY)
 GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
@@ -342,6 +343,31 @@ GREETING_WORDS = {
 BOT_NAME_KEYWORDS = {"بات", "ربات", "روبات", "بمبات", "bot", "robot"}
 BOT_CALL_NAME = os.getenv("BOT_CALL_NAME", "").strip().lower()
 
+# عبارت‌هایی که یعنی کاربر داره درباره‌ی سازنده/مالکِ ربات می‌پرسه (کی ساختت، بابات کیه، و...)
+CREATOR_QUESTION_TRIGGERS = [
+    "سازندت", "سازنده ات", "سازنده‌ات", "سازندته", "سازنده‌ی تو", "سازنده تو",
+    "کی ساختت", "کی درستت کرد", "کی طراحیت کرد", "کی برنامه نویسیت کرد",
+    "بابات کی", "پدرت کی", "مامانت کی", "مادرت کی",
+    "مالکت کی", "صاحبت کی", "خالقت کی",
+    "تورو ساخته", "تو رو ساخته", "توروو ساخته", "تو رو ساخت", "تورو ساخت",
+    "مال کی هستی", "متعلق به کی", "برنامه نویست کی", "برنامه‌نویست کی",
+]
+
+CREATOR_REPLY = (
+    "سازنده‌ی من دسک‌وند (DeskWend) هست... یکی از اون آدمایی که یه‌جوری راهش رو تو دنیای عجیبِ من "
+    "پیدا کرد و از اینجا سر در آوردم 😅\n\n"
+    "اگه دوست داری بیشتر بشناسیش یا با بقیه‌ی آدمای این ماجرا آشنا شی:\n"
+    "🔗 https://t.me/+FShL2ONhZaViZTY0\n"
+    "🔗 https://t.me/mozir1u"
+)
+
+
+def is_creator_question(text: str) -> bool:
+    if not text:
+        return False
+    text_lower = text.lower()
+    return any(trigger in text_lower for trigger in CREATOR_QUESTION_TRIGGERS)
+
 HISTORY_LIMIT = 8
 
 PERSIAN_LETTERS = list("ابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی")
@@ -428,9 +454,9 @@ async def _text_via_together(prompt: str) -> str:
 
 
 TEXT_PROVIDERS = [
+    ("Gemini", _text_via_gemini),
     ("Groq", _text_via_groq),
     ("Cerebras", _text_via_cerebras),
-    ("Gemini", _text_via_gemini),
 ]
 if sambanova_client:
     TEXT_PROVIDERS.append(("SambaNova", _text_via_sambanova))
@@ -526,9 +552,9 @@ async def _image_via_sambanova(image_path: str, caption: str) -> str:
 
 
 IMAGE_PROVIDERS = [
+    ("Gemini", _image_via_gemini),
     ("Groq", _image_via_groq),
     ("Cerebras", _image_via_cerebras),
-    ("Gemini", _image_via_gemini),
 ]
 if sambanova_client:
     IMAGE_PROVIDERS.append(("SambaNova", _image_via_sambanova))
@@ -559,10 +585,15 @@ def prepare_text_for_speech(raw_text: str) -> str:
     return text[:TTS_MAX_CHARS]
 
 
-def _generate_mp3_bytes(text: str) -> bytes:
-    buf = io.BytesIO()
-    gTTS(text=text, lang="fa", lang_check=False).write_to_fp(buf)
-    return buf.getvalue()
+async def _generate_mp3_bytes(text: str) -> bytes:
+    # از edge-tts (موتورِ متن‌به‌گفتارِ مایکروسافت اِج) استفاده می‌کنیم چون gTTS از فارسی
+    # پشتیبانی نمی‌کنه؛ edge-tts رایگانه و صدای فارسیِ طبیعی داره.
+    communicate = edge_tts.Communicate(text, "fa-IR-FaridNeural")
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return audio_data
 
 
 def _convert_mp3_to_ogg(mp3_bytes: bytes):
@@ -585,7 +616,7 @@ def _convert_mp3_to_ogg(mp3_bytes: bytes):
 
 
 async def text_to_speech(text: str):
-    mp3_bytes = await asyncio.to_thread(_generate_mp3_bytes, text)
+    mp3_bytes = await _generate_mp3_bytes(text)
     ogg_bytes = await asyncio.to_thread(_convert_mp3_to_ogg, mp3_bytes)
     if ogg_bytes:
         return ogg_bytes, "voice"
@@ -620,8 +651,28 @@ async def send_waiting(message, context: ContextTypes.DEFAULT_TYPE, fallback_tex
             return msg, True
         except Exception:
             pass
+    # اگه استیکر/گیفِ اختصاصی ست نشده، ولی یه پکِ استیکر (STICKER_PACK_NAME) داریم،
+    # یه استیکرِ رندوم از همون پک به‌عنوانِ نشونه‌ی «در حال پردازش» بفرست.
+    pack_sticker_id = await get_fallback_sticker(context)
+    if pack_sticker_id:
+        try:
+            msg = await context.bot.send_sticker(chat_id, pack_sticker_id)
+            return msg, True
+        except Exception:
+            pass
     msg = await message.reply_text(fallback_text)
     return msg, False
+
+
+async def send_random_pack_sticker(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """یه استیکرِ رندوم از پکِ STICKER_PACK_NAME می‌فرسته (برای لحظه‌های باحال مثلِ بردنِ بازی).
+    اگه پک ست نشده باشه یا ارسال شکست بخوره، بی‌سروصدا هیچ‌کاری نمی‌کنه."""
+    sticker_id = await get_fallback_sticker(context)
+    if sticker_id:
+        try:
+            await context.bot.send_sticker(chat_id, sticker_id)
+        except Exception:
+            pass
 
 
 async def finish_waiting(context: ContextTypes.DEFAULT_TYPE, chat_id: int, waiting_msg, is_media: bool, final_text: str, parse_mode: str = None, reply_markup=None):
@@ -648,11 +699,11 @@ async def react_to_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, mes
         pass
 
 
-# ---------- پکِ استیکر برای وقتی هوش مصنوعی جواب نمی‌ده ----------
+# ---------- پکِ استیکر (برای «در حال پردازش»، بردنِ بازی‌ها، و وقتی هوش مصنوعی جواب نمی‌ده) ----------
 # برای فعال‌کردنش، توی Railway > Variables متغیر STICKER_PACK_NAME رو با "shortname" یه
-# پکِ استیکرِ تلگرامی ست کن (آخرِ لینکِ t.me/addstickers/<shortname>). این مقدار همین الانش
-# هم استفاده می‌شه: هر وقت همه‌ی سرویس‌های هوش مصنوعی شکست بخورن، یه استیکر رندوم از این پک
-# می‌فرسته (پایین‌تر در send_ai_failure).
+# پکِ استیکرِ تلگرامی ست کن (آخرِ لینکِ t.me/addstickers/<shortname>). یه‌بار که ست شد، از همین
+# یه پک، استیکرهای رندوم توی چندجا استفاده می‌شه: پیامِ «صبر کن...»، بردنِ بازی‌ها، و وقتی همه‌ی
+# سرویس‌های هوش مصنوعی شکست بخورن.
 STICKER_PACK_NAME = os.getenv("STICKER_PACK_NAME", "").strip()
 _sticker_pack_cache = None
 
@@ -843,6 +894,7 @@ async def hafez_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context, update.message.chat_id, waiting_msg, is_media, formatted,
             parse_mode="HTML", reply_markup=VOICE_BUTTON_KEYBOARD,
         )
+        await send_random_pack_sticker(context, update.message.chat_id)
     except Exception as e:
         await send_ai_failure(context, update.message.chat_id, waiting_msg, is_media, e)
 
@@ -2167,6 +2219,9 @@ async def ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         return
+    if is_creator_question(user_prompt):
+        await update.message.reply_text(CREATOR_REPLY)
+        return
     user_id = update.effective_user.id
     name = get_display_name(update.effective_user)
     history_ctx = get_history_context(user_id)
@@ -2290,6 +2345,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     add_to_history(user_id, text)
     track_group_activity(update)
 
+    if is_creator_question(text):
+        await update.message.reply_text(CREATOR_REPLY)
+        return
+
     reply_to = update.message.reply_to_message
     if reply_to and reply_to.from_user and reply_to.from_user.id == context.bot.id and text:
         name = get_display_name(update.effective_user)
@@ -2326,6 +2385,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"🎉 درست گفتی! عدد {game['number']} بود. تو {game['attempts']} بار حدس زدی، دمت گرم!"
             )
+            await send_random_pack_sticker(context, chat_id)
             del active_guess_games[chat_id]
         elif guess < game["number"]:
             await update.message.reply_text("⬆️ بزرگ‌تره، بازم حدس بزن.")
@@ -2338,6 +2398,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if int(text) == game["answer"]:
             await react_to_message(context, chat_id, update.message.message_id, "👏")
             await update.message.reply_text("✅ آره درسته! خیلی سریع بودی 👏")
+            await send_random_pack_sticker(context, chat_id)
             del active_math_games[chat_id]
         else:
             await update.message.reply_text("❌ نه، اشتباهه. دوباره امتحان کن.")
