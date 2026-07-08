@@ -346,7 +346,7 @@ GREETING_WORDS = {
     "hi", "hello", "hey", "salam",
 }
 
-BOT_NAME_KEYWORDS = {"بات", "ربات", "روبات", "بمبات", "bot", "robot"}
+BOT_NAME_KEYWORDS = {"بات", "ربات", "روبات", "moz", "bot", "robot"}
 BOT_CALL_NAME = os.getenv("BOT_CALL_NAME", "").strip().lower()
 
 # عبارت‌هایی که یعنی کاربر داره درباره‌ی سازنده/مالکِ ربات می‌پرسه (کی ساختت، بابات کیه، و...)
