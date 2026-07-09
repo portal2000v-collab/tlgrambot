@@ -46,7 +46,6 @@ OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")          # اختیاری
 MISTRAL_KEY = os.getenv("MISTRAL_KEY")                # اختیاری
 SAMBANOVA_KEY = os.getenv("SAMBANOVA_KEY")            # اختیاری - سرویس جدید (رایگان)
 TOGETHER_KEY = os.getenv("TOGETHER_KEY")              # اختیاری - سرویس جدید (رایگان با اعتبار اولیه)
-DAHL_KEY = os.getenv("DAHL_KEY")                      # اختیاری - سرویس جدید (Dahl Inference)
 
 # آدرس وب‌اپِ بازی حکم (بعد از دیپلویِ سرویسِ دوم روی Railway، لینکش رو اینجا بذار)
 HOKM_WEBAPP_URL = os.getenv("HOKM_WEBAPP_URL", "").strip()
@@ -105,12 +104,6 @@ together_client = (
 TOGETHER_TEXT_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
 TOGETHER_VISION_MODEL = "meta-llama/Llama-Vision-Free"
 
-# Dahl Inference: API سازگار با OpenAI (سرویسِ جدید، فقط متن)
-dahl_client = (
-    OpenAI(api_key=DAHL_KEY, base_url="https://inference.dahl.global/v1") if DAHL_KEY else None
-)
-DAHL_TEXT_MODEL = "MiniMaxAI/MiniMax-M2.7"
-
 PROVIDER_MIN_INTERVAL = {
     "groq": 2.2,
     "cerebras": 1.0,
@@ -119,7 +112,6 @@ PROVIDER_MIN_INTERVAL = {
     "mistral": 1.5,
     "sambanova": 1.5,
     "together": 1.5,
-    "dahl": 1.5,
 }
 _provider_locks = {name: asyncio.Lock() for name in PROVIDER_MIN_INTERVAL}
 _provider_last_time = {name: 0.0 for name in PROVIDER_MIN_INTERVAL}
@@ -465,16 +457,6 @@ async def _text_via_together(prompt: str) -> str:
     return response.choices[0].message.content
 
 
-async def _text_via_dahl(prompt: str) -> str:
-    await _pace("dahl")
-    response = await asyncio.to_thread(
-        dahl_client.chat.completions.create,
-        model=DAHL_TEXT_MODEL,
-        messages=[{"role": "system", "content": PERSONA}, {"role": "user", "content": prompt}],
-    )
-    return response.choices[0].message.content
-
-
 TEXT_PROVIDERS = [
     ("Gemini", _text_via_gemini),
     ("Groq", _text_via_groq),
@@ -488,8 +470,6 @@ if openrouter_client:
     TEXT_PROVIDERS.append(("OpenRouter", _text_via_openrouter))
 if mistral_client:
     TEXT_PROVIDERS.append(("Mistral", _text_via_mistral))
-if dahl_client:
-    TEXT_PROVIDERS.append(("Dahl", _text_via_dahl))
 
 
 async def ask_ai(prompt: str) -> str:
@@ -2592,4 +2572,13 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-   
+    app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("✅ ربات با موفقیت روشن شد و در حال گوش‌دادن به پیام‌هاست.")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
