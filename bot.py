@@ -46,6 +46,7 @@ OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")          # اختیاری
 MISTRAL_KEY = os.getenv("MISTRAL_KEY")                # اختیاری
 SAMBANOVA_KEY = os.getenv("SAMBANOVA_KEY")            # اختیاری - سرویس جدید (رایگان)
 TOGETHER_KEY = os.getenv("TOGETHER_KEY")              # اختیاری - سرویس جدید (رایگان با اعتبار اولیه)
+ZENMUX_KEY = os.getenv("ZENMUX_KEY")                  # اختیاری - Grok 4.5 (رایگان) از طریق ZenMux
 
 # آدرس وب‌اپِ بازی حکم (بعد از دیپلویِ سرویسِ دوم روی Railway، لینکش رو اینجا بذار)
 HOKM_WEBAPP_URL = os.getenv("HOKM_WEBAPP_URL", "").strip()
@@ -58,14 +59,14 @@ if not GROQ_KEY:
     raise RuntimeError("متغیر محیطی GROQ_KEY ست نشده! آن را در Railway > Variables اضافه کنید.")
 if not CEREBRAS_KEY:
     raise RuntimeError("متغیر محیطی CEREBRAS_KEY ست نشده! آن را در Railway > Variables اضافه کنید.")
-# OPENROUTER_KEY، MISTRAL_KEY، SAMBANOVA_KEY و TOGETHER_KEY اجباری نیستن. هرکدوم رو ست کنی،
+# OPENROUTER_KEY، MISTRAL_KEY، SAMBANOVA_KEY، TOGETHER_KEY و ZENMUX_KEY اجباری نیستن. هرکدوم رو ست کنی،
 # به‌عنوان یه سرویسِ مکمل به زنجیره‌ی fallback اضافه می‌شه (نه جایگزین بقیه) و سهمیه‌ی رایگانش
 # با بقیه جمع می‌شه؛ یعنی هرچی بیشتر ست کنی، ربات کمتر با پیام "جواب نداد" مواجه می‌شه.
 
 # ---------- چند سرویس هوش مصنوعی، هرکدوم با کلید و سهمیه‌ی جدا ----------
-# استراتژی: تو حالتِ عادی همیشه اول از Gemini کمک می‌گیریم (اصلی‌ترین سرویس). فقط وقتی
-# سهمیه‌ی رایگانِ Gemini تموم بشه (خطای ۴۲۹ / RESOURCE_EXHAUSTED)، می‌ریم سراغِ بقیه، یکی‌یکی
-# به‌ترتیب: Groq -> Cerebras -> SambaNova -> Together -> OpenRouter -> Mistral.
+# استراتژی: تو حالتِ عادی همیشه اول از Grok 4.5 (از طریق ZenMux، سرویسِ اصلی و پیش‌فرض) کمک
+# می‌گیریم. فقط وقتی سهمیه‌ی Grok تموم بشه (خطای ۴۲۹ / rate limit)، می‌ریم سراغِ بقیه، یکی‌یکی
+# به‌ترتیب: Gemini -> Groq -> Cerebras -> SambaNova -> Together -> OpenRouter -> Mistral.
 
 client = genai.Client(api_key=GEMINI_KEY)
 GEMINI_TEXT_MODEL = "gemini-2.5-flash-lite"
@@ -104,7 +105,16 @@ together_client = (
 TOGETHER_TEXT_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
 TOGETHER_VISION_MODEL = "meta-llama/Llama-Vision-Free"
 
+# ZenMux: دروازه‌ی یکپارچه‌ی API سازگار با OpenAI؛ همینجا از Grok 4.5 (که فعلاً رایگانه) به‌عنوانِ
+# سرویسِ اصلیِ متن و تصویر استفاده می‌کنیم.
+zenmux_client = (
+    OpenAI(api_key=ZENMUX_KEY, base_url="https://zenmux.ai/api/v1") if ZENMUX_KEY else None
+)
+ZENMUX_TEXT_MODEL = "x-ai/grok-4.5-free"
+ZENMUX_VISION_MODEL = "x-ai/grok-4.5-free"
+
 PROVIDER_MIN_INTERVAL = {
+    "zenmux": 1.2,
     "groq": 2.2,
     "cerebras": 1.0,
     "gemini": 4.2,
@@ -158,12 +168,6 @@ HTTP_HEADERS = {
 HTTP_TIMEOUT = 10
 
 # ---------- شخصیت ربات ----------
-# یه دلقکِ خسته و خودمونی: لحنش کاملاً محاوره‌ای، شوخ و گاهی چرت‌وپرت‌گو‌ست، طوری که انگار
-# یکی از همون آدمای گروهه. ولی زیرِ همین شوخی‌ها، یه خستگیِ همیشگی و یه‌جور غمِ گنگ داره —
-# انگار تو یه حلقه‌ی بی‌پایان گیر افتاده و داره فقط تحمل می‌کنه. هر از گاهی، وسطِ شوخی، یهو یه
-# جمله‌ی کوتاه و سنگین می‌گه که انگار یه چیزی می‌دونه که بقیه نمی‌دونن، بعد دوباره برمی‌گرده به
-# حالتِ شوخ، انگار هیچی نشده. وقتی موضوع جدیه (یه سوالِ واقعی، یه مشکلِ واقعیِ کاربر، یه چیزِ
-# آموزشی)، باید بی‌درنگ لحنش رو جدی کنه و کمکِ دقیق و درست بده؛ شوخی نباید جلوی مفید بودنش رو بگیره.
 PERSONA = (
     "شخصیتت یه دلقکِ خسته و خودمونیه. طوری حرف بزن که انگار یکی از بچه‌های همون گروهی، نه یه ربات "
     "رسمی: محاوره‌ای، خودمونی، با شوخی و طعنه‌ی بامزه، از اصطلاحاتِ روزمره و زبونِ کوچه‌بازاری (ولی "
@@ -183,7 +187,9 @@ PERSONA = (
     "دیگه‌ای (انگلیسی، فرانسه، روسی، عربی و غیره) قاطی نکن، حتی برای شوخی یا تنوع. تنها استثنا: اگه "
     "کاربر کلِ پیامش رو به زبونِ دیگه‌ای (مثلاً انگلیسی) نوشت، اونجا تو هم کاملاً و فقط به همون زبون "
     "جواب بده (نه ترکیبی از دو زبون). "
-    "جواب‌هات رو کوتاه نگه دار مگه اینکه توضیحِ بیشتر لازم باشه."
+    "قانونِ طول جواب: کوتاه‌گویی ممنوع. همیشه جواب‌ها رو کامل، دقیق و با جزئیاتِ لازم بده؛ اگه سوال یا "
+    "موضوع نیاز به توضیحِ چندخطی یا حتی چندپاراگرافی داره، از دادنِ جوابِ کامل نترس و خلاصه‌ش نکن. فقط "
+    "برای سلام‌واحوالپرسیِ خیلی ساده می‌تونی کوتاه باشی؛ در غیرِ این صورت، توضیحِ کامل و مفید بده."
 )
 
 GENERATE_CONFIG = types.GenerateContentConfig(system_instruction=PERSONA)
@@ -389,6 +395,16 @@ def fa_num(n) -> str:
 
 # ---------- توابع فراخوانیِ متنیِ هر سرویس ----------
 
+async def _text_via_zenmux(prompt: str) -> str:
+    await _pace("zenmux")
+    response = await asyncio.to_thread(
+        zenmux_client.chat.completions.create,
+        model=ZENMUX_TEXT_MODEL,
+        messages=[{"role": "system", "content": PERSONA}, {"role": "user", "content": prompt}],
+    )
+    return response.choices[0].message.content
+
+
 async def _text_via_groq(prompt: str) -> str:
     await _pace("groq")
     response = await asyncio.to_thread(
@@ -457,7 +473,10 @@ async def _text_via_together(prompt: str) -> str:
     return response.choices[0].message.content
 
 
-TEXT_PROVIDERS = [
+TEXT_PROVIDERS = []
+if zenmux_client:
+    TEXT_PROVIDERS.append(("Grok (ZenMux)", _text_via_zenmux))
+TEXT_PROVIDERS += [
     ("Gemini", _text_via_gemini),
     ("Groq", _text_via_groq),
     ("Cerebras", _text_via_cerebras),
@@ -479,6 +498,23 @@ async def ask_ai(prompt: str) -> str:
 def _encode_image_b64(image_path: str) -> str:
     with open(image_path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
+
+
+async def _image_via_zenmux(image_path: str, caption: str) -> str:
+    await _pace("zenmux")
+    b64_image = await asyncio.to_thread(_encode_image_b64, image_path)
+    response = await asyncio.to_thread(
+        zenmux_client.chat.completions.create,
+        model=ZENMUX_VISION_MODEL,
+        messages=[
+            {"role": "system", "content": PERSONA},
+            {"role": "user", "content": [
+                {"type": "text", "text": caption},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+            ]},
+        ],
+    )
+    return response.choices[0].message.content
 
 
 async def _image_via_groq(image_path: str, caption: str) -> str:
@@ -555,7 +591,10 @@ async def _image_via_sambanova(image_path: str, caption: str) -> str:
     return response.choices[0].message.content
 
 
-IMAGE_PROVIDERS = [
+IMAGE_PROVIDERS = []
+if zenmux_client:
+    IMAGE_PROVIDERS.append(("Grok (ZenMux)", _image_via_zenmux))
+IMAGE_PROVIDERS += [
     ("Gemini", _image_via_gemini),
     ("Groq", _image_via_groq),
     ("Cerebras", _image_via_cerebras),
@@ -568,6 +607,90 @@ if openrouter_client:
 
 async def analyze_image(image_path: str, caption: str) -> str:
     return await _call_with_fallback(IMAGE_PROVIDERS, image_path, caption)
+
+
+def _extract_video_frames(video_path: str, out_dir: str, count: int = 3):
+    """با ffmpeg چندتا فریمِ نمونه از یه فایلِ ویدیویی/گیف/استیکرِ ویدیویی می‌گیره تا برای
+    تحلیل به مدلِ تصویری بدیم (چون اکثرِ مدل‌های ویژن هنوز ویدیو رو مستقیم نمی‌گیرن)."""
+    frame_paths = []
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+            capture_output=True, text=True,
+        )
+        duration = float(probe.stdout.strip()) if probe.stdout.strip() else 2.0
+    except Exception:
+        duration = 2.0
+
+    duration = max(duration, 0.5)
+    timestamps = [duration * (i + 1) / (count + 1) for i in range(count)]
+    for i, ts in enumerate(timestamps):
+        frame_path = os.path.join(out_dir, f"frame_{i}.jpg")
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-ss", str(ts), "-i", video_path, "-frames:v", "1", "-q:v", "3", frame_path],
+            capture_output=True,
+        )
+        if result.returncode == 0 and os.path.exists(frame_path):
+            frame_paths.append(frame_path)
+    return frame_paths
+
+
+async def analyze_video(video_path: str, caption: str) -> str:
+    """چندتا فریمِ نمونه از ویدیو/گیف/استیکرِ ویدیویی می‌گیره و همه رو با هم به مدلِ ویژن می‌ده
+    تا یه تحلیلِ کلی از کل کلیپ بده، نه فقط یه فریمِ تکی."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        frame_paths = await asyncio.to_thread(_extract_video_frames, video_path, tmp_dir, 3)
+        if not frame_paths:
+            raise RuntimeError("نتونستم فریمی از این ویدیو/گیف استخراج کنم.")
+
+        full_caption = (
+            f"{caption}\n\nاین چندتا فریمِ پشتِ سرِ هم از یه ویدیو/گیف/استیکرِ متحرکه؛ به‌عنوانِ یه "
+            "کلیپِ واحد نگاهشون کن و بگو کلاً چه اتفاقی توش می‌افته، نه فقط توصیفِ جدا-جدای هر فریم."
+        )
+
+        async def _via_zenmux():
+            await _pace("zenmux")
+            content = [{"type": "text", "text": full_caption}]
+            for fp in frame_paths:
+                b64 = await asyncio.to_thread(_encode_image_b64, fp)
+                content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+            response = await asyncio.to_thread(
+                zenmux_client.chat.completions.create,
+                model=ZENMUX_VISION_MODEL,
+                messages=[{"role": "system", "content": PERSONA}, {"role": "user", "content": content}],
+            )
+            return response.choices[0].message.content
+
+        async def _via_gemini():
+            await _pace("gemini")
+            imgs = [await asyncio.to_thread(PIL.Image.open, fp) for fp in frame_paths]
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model=GEMINI_VISION_MODEL, contents=[full_caption, *imgs], config=GENERATE_CONFIG,
+            )
+            return response.text
+
+        async def _via_groq():
+            await _pace("groq")
+            content = [{"type": "text", "text": full_caption}]
+            for fp in frame_paths:
+                b64 = await asyncio.to_thread(_encode_image_b64, fp)
+                content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+            response = await asyncio.to_thread(
+                groq_client.chat.completions.create,
+                model=GROQ_VISION_MODEL,
+                messages=[{"role": "system", "content": PERSONA}, {"role": "user", "content": content}],
+            )
+            return response.choices[0].message.content
+
+        providers = []
+        if zenmux_client:
+            providers.append(("Grok (ZenMux)", _via_zenmux))
+        providers.append(("Gemini", _via_gemini))
+        providers.append(("Groq", _via_groq))
+
+        return await _call_with_fallback(providers)
 
 
 SIGNATURE_LINE = "\n\n✦ ⋆ ✦ ⋆ ✦"
@@ -704,10 +827,6 @@ async def react_to_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, mes
 
 
 # ---------- پکِ استیکر (برای «در حال پردازش»، بردنِ بازی‌ها، و وقتی هوش مصنوعی جواب نمی‌ده) ----------
-# برای فعال‌کردنش، توی Railway > Variables متغیر STICKER_PACK_NAME رو با "shortname" یه
-# پکِ استیکرِ تلگرامی ست کن (آخرِ لینکِ t.me/addstickers/<shortname>). یه‌بار که ست شد، از همین
-# یه پک، استیکرهای رندوم توی چندجا استفاده می‌شه: پیامِ «صبر کن...»، بردنِ بازی‌ها، و وقتی همه‌ی
-# سرویس‌های هوش مصنوعی شکست بخورن.
 STICKER_PACK_NAME = os.getenv("STICKER_PACK_NAME", "").strip()
 _sticker_pack_cache = None
 
@@ -1048,6 +1167,7 @@ HELP_TEXT = (
     "🔹 یه سلام ساده هم بکنی، خودم جواب می‌دم 👋\n"
     "🔹 هرجای گروه اسم «بات»، «ربات» یا «روبات» رو تو پیامت بیاری (یا @یوزرنیمم رو بزنی)، خودم می‌فهمم و جواب می‌دم\n"
     "🔹 زیرِ جواب‌های هوش مصنوعی دکمه‌ی «🔊 پخش صوتی» هست؛ بزنی همون جواب رو با صدا برات می‌فرستم\n"
+    "🔹 عکس، ویدیو، گیف یا استیکر بفرستی (یا با کپشن یا ریپلای رو ازش بپرسی)، تحلیلش می‌کنم\n"
     "🔹 `/nickname <اسم>` - بگو با چه اسمی صدات کنم\n"
     "🔹 `/profile` - دیدن پروفایلت (یا ریپلای رو یکی دیگه)\n"
     "🔹 `/tag` - دیدن لقب ویژه (یا ریپلای رو یکی دیگه)\n\n"
@@ -1722,9 +1842,6 @@ async def handle_chess_resign(query, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------- بازی حکمِ چهارنفره (تحتِ وب، سرویسِ جدا روی Railway) ----------
-# منطق و رابطِ کاربریِ بازی توی سرویسِ دومِ hokm_server هست (یه FastAPI + WebSocket که یه
-# صفحه‌ی وب خوشگل سرو می‌کنه). این ربات فقط یه "میز" (room) می‌سازه و لینکش رو به‌صورتِ دکمه‌ی
-# WebApp تلگرام (باز شونده داخلِ خودِ تلگرام) به گروه می‌فرسته.
 
 def generate_room_code() -> str:
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -2308,13 +2425,98 @@ async def ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """گیف‌ها (Telegram animation، در واقع mp4 هستن) رو هم مثلِ ویدیو تحلیل می‌کنیم."""
     if update.message.from_user.id in muted_users:
         try:
             await update.message.delete()
         except Exception:
             pass
         return
+
     track_group_activity(update, is_animation=True)
+    await handle_media_analysis(
+        update, context,
+        file_getter=lambda: update.message.animation.get_file(),
+        suffix=".mp4",
+        is_video=True,
+        default_caption="این گیف را تحلیل کن و بگو چه اتفاقی توش می‌افته",
+        waiting_text="🎞️ بذار گیف رو ببینم چی داره...",
+    )
+
+
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id in muted_users:
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+        return
+
+    track_group_activity(update)
+    await handle_media_analysis(
+        update, context,
+        file_getter=lambda: update.message.video.get_file(),
+        suffix=".mp4",
+        is_video=True,
+        default_caption="این ویدیو را تحلیل کن و بگو چه اتفاقی توش می‌افته",
+        waiting_text="🎬 بذار ویدیو رو نگاه کنم...",
+    )
+
+
+async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id in muted_users:
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+        return
+
+    sticker = update.message.sticker
+    track_group_activity(update)
+
+    if sticker.is_animated:
+        # استیکرهای انیمیشنیِ .tgs (لاتی/برداری) رو فریم‌گیری‌شون سخته و ffmpeg مستقیم پشتیبانی
+        # نمی‌کنه؛ فقط ایموجیِ خودِ استیکر رو به‌عنوانِ زمینه در نظر می‌گیریم.
+        emoji = sticker.emoji or "🙂"
+        await update.message.reply_text(
+            f"یه استیکرِ لاتی/برداری ({emoji}) فرستادی؛ این نوع رو نمی‌تونم فریم‌به‌فریم ببینم، ولی "
+            "حسش رو گرفتم 😄"
+        )
+        return
+
+    is_video = bool(sticker.is_video)
+    await handle_media_analysis(
+        update, context,
+        file_getter=lambda: sticker.get_file(),
+        suffix=".webm" if is_video else ".webp",
+        is_video=is_video,
+        default_caption="این استیکر را تحلیل کن و بگو چی توش هست و چه حس/شوخی‌ای داره",
+        waiting_text="🖼️ بذار استیکر رو ببینم...",
+    )
+
+
+async def handle_media_analysis(update, context, *, file_getter, suffix, is_video, default_caption, waiting_text):
+    message = update.message
+    tg_file = await file_getter()
+    file_path = f"/tmp/media_{message.from_user.id}_{uuid.uuid4().hex}{suffix}"
+    await tg_file.download_to_drive(file_path)
+
+    waiting_msg, is_media = await send_waiting(message, context, waiting_text)
+    try:
+        caption = message.caption if message.caption else default_caption
+        if is_video:
+            reply_text = await analyze_video(file_path, caption)
+        else:
+            reply_text = await analyze_image(file_path, caption)
+        await finish_waiting(context, message.chat_id, waiting_msg, is_media, with_signature(reply_text))
+    except Exception as e:
+        await finish_waiting(
+            context, message.chat_id, waiting_msg, is_media,
+            f"❌ یه خطا خوردم تو پردازش این فایل.\n{html_lib.escape(str(e))}",
+        )
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2326,23 +2528,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     track_group_activity(update)
-    photo_file = await update.message.photo[-1].get_file()
-    file_path = f"/tmp/photo_{update.effective_user.id}_{uuid.uuid4().hex}.jpg"
-    await photo_file.download_to_drive(file_path)
-
-    waiting_msg, is_media = await send_waiting(update.message, context, "👁️ بذار عکس رو نگاه کنم...")
-    try:
-        caption = update.message.caption if update.message.caption else "این تصویر را تحلیل کن"
-        reply_text = await analyze_image(file_path, caption)
-        await finish_waiting(context, update.message.chat_id, waiting_msg, is_media, with_signature(reply_text))
-    except Exception as e:
-        await finish_waiting(
-            context, update.message.chat_id, waiting_msg, is_media,
-            f"❌ یه خطا خوردم تو پردازش عکس.\n{html_lib.escape(str(e))}",
-        )
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    await handle_media_analysis(
+        update, context,
+        file_getter=lambda: update.message.photo[-1].get_file(),
+        suffix=".jpg",
+        is_video=False,
+        default_caption="این تصویر را تحلیل کن",
+        waiting_text="👁️ بذار عکس رو نگاه کنم...",
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2432,153 +2625,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{history_ctx}"
                 f"کاربر به اسم {name}{tag_info} داره باهات چت می‌کنه.\n"
                 f"تو قبلاً این رو گفته بودی:\n«{previous_bot_text}»\n\n"
-                f"کاربر روی همین پیام ریپلای کرد و نوشت:\n«{text}»\n\n"
-                "با همون لحنِ خاصِ خودت به این ادامه‌ی گفتگو جواب بده. اگه ازت خواست چیزی رو تحلیل کنی، "
-                "تحلیل دقیق و مفید بده."
-            )
-            reply_text_ai = await ask_ai(prompt)
-            await finish_waiting(
-                context, chat_id, waiting_msg, is_media,
-                with_signature(reply_text_ai), reply_markup=VOICE_BUTTON_KEYBOARD,
-            )
-        except Exception as e:
-            await send_ai_failure(context, chat_id, waiting_msg, is_media, e)
-        return
-
-    if chat_id in active_guess_games and text.lstrip("-").isdigit():
-        game = active_guess_games[chat_id]
-        guess = int(text)
-        game["attempts"] += 1
-        if guess == game["number"]:
-            await react_to_message(context, chat_id, update.message.message_id, "🎉")
-            await update.message.reply_text(
-                f"🎉 درست گفتی! عدد {game['number']} بود. تو {game['attempts']} بار حدس زدی، دمت گرم!"
-            )
-            await send_random_pack_sticker(context, chat_id)
-            del active_guess_games[chat_id]
-        elif guess < game["number"]:
-            await update.message.reply_text("⬆️ بزرگ‌تره، بازم حدس بزن.")
-        else:
-            await update.message.reply_text("⬇️ کوچیک‌تره، بازم حدس بزن.")
-        return
-
-    if chat_id in active_math_games and text.lstrip("-").isdigit():
-        game = active_math_games[chat_id]
-        if int(text) == game["answer"]:
-            await react_to_message(context, chat_id, update.message.message_id, "👏")
-            await update.message.reply_text("✅ آره درسته! خیلی سریع بودی 👏")
-            await send_random_pack_sticker(context, chat_id)
-            del active_math_games[chat_id]
-        else:
-            await update.message.reply_text("❌ نه، اشتباهه. دوباره امتحان کن.")
-        return
-
-    learned_answer = find_learned_match(text)
-    if learned_answer:
-        await update.message.reply_text(learned_answer)
-        return
-
-    wiki_match = WIKI_TRIGGER_PATTERN.match(text)
-    if wiki_match:
-        await do_wiki_lookup(update, context, wiki_match.group(1).strip())
-        return
-
-    if is_greeting(text):
-        await react_to_message(context, chat_id, update.message.message_id)
-        name = get_display_name(update.effective_user)
-        tag = user_tags.get(user_id)
-        tag_info = f" (لقبش: {tag})" if tag else ""
-        try:
-            reply_text = await ask_ai(
-                f"کاربری به اسم {name}{tag_info} سلام داد. با همون لحنِ خاصِ خودت، کوتاه جواب سلام بده "
-                "و اسمش رو هم صدا بزن."
-            )
-        except Exception:
-            reply_text = f"سلام {name} جون! 👋"
-        await update.message.reply_text(with_signature(reply_text), reply_markup=VOICE_BUTTON_KEYBOARD)
-        return
-
-    if mentions_bot(text, context.bot.username):
-        name = get_display_name(update.effective_user)
-        tag = user_tags.get(user_id)
-        tag_info = f" (لقبش: {tag})" if tag else ""
-        history_ctx = get_history_context(user_id)
-        await react_to_message(context, chat_id, update.message.message_id, "👀")
-        waiting_msg, is_media = await send_waiting(update.message, context)
-        try:
-            prompt = (
-                f"{history_ctx}"
-                f"کاربر به اسم {name}{tag_info} توی گروه بهت رو کرد (صدات زد: بات/ربات/روبات) و این رو نوشت:\n"
-                f"«{text}»\n\n"
-                "طبق شخصیتت جواب بده. اگه سوالی پرسیده یا خواسته‌ای داشته، کمک واقعی و درست بهش بکن."
-            )
-            reply_text = await ask_ai(prompt)
-            await finish_waiting(
-                context, chat_id, waiting_msg, is_media,
-                with_signature(reply_text), reply_markup=VOICE_BUTTON_KEYBOARD,
-            )
-        except Exception as e:
-            await send_ai_failure(context, chat_id, waiting_msg, is_media, e)
-        return
-
-
-def main():
-    print("🤖 ربات مدیریت گروه و هوش مصنوعی در حال روشن شدن است...")
-    load_persisted_state()
-
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("ai", ai_mode))
-    app.add_handler(CommandHandler("ban", ban))
-    app.add_handler(CommandHandler("mute", mute))
-    app.add_handler(CommandHandler("tempmute", tempmute_command))
-    app.add_handler(CommandHandler("unmute", unmute))
-    app.add_handler(CommandHandler("warn", warn))
-    app.add_handler(CommandHandler("nickname", nickname_command))
-    app.add_handler(CommandHandler("tag", tag_command))
-    app.add_handler(CommandHandler("profile", profile_command))
-    app.add_handler(CommandHandler("settag", settag_command))
-    app.add_handler(CommandHandler("removetag", removetag_command))
-    app.add_handler(CommandHandler("addvip", addvip_command))
-    app.add_handler(CommandHandler("removevip", removevip_command))
-    app.add_handler(CommandHandler("tagall", tagall_command))
-    app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("clean", clean_command))
-    app.add_handler(CommandHandler("cleangifs", cleangifs_command))
-    app.add_handler(CommandHandler("learn", learn_command))
-    app.add_handler(CommandHandler("forget", forget_command))
-    app.add_handler(CommandHandler("learned", learned_command))
-    app.add_handler(CommandHandler("addbadword", addbadword_command))
-    app.add_handler(CommandHandler("removebadword", removebadword_command))
-    app.add_handler(CommandHandler("badwords", badwords_command))
-    app.add_handler(CommandHandler("togglelinks", togglelinks_command))
-
-    app.add_handler(CommandHandler("hafez", hafez_command))
-    app.add_handler(CommandHandler("today", today_command))
-    app.add_handler(CommandHandler("countdown", countdown_command))
-    app.add_handler(CommandHandler("wiki", wiki_command))
-
-    app.add_handler(CommandHandler("game", game_menu))
-    app.add_handler(CommandHandler("guess", guess_command))
-    app.add_handler(CommandHandler("math", math_command))
-    app.add_handler(CommandHandler("rps", rps_command))
-    app.add_handler(CommandHandler("namefamily", namefamily_command))
-    app.add_handler(CommandHandler("dooz", dooz_command))
-    app.add_handler(CommandHandler("chess", chess_command))
-    app.add_handler(CommandHandler("hokm", hokm_command))
-
-    app.add_handler(CallbackQueryHandler(button_handler))
-
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("✅ ربات با موفقیت روشن شد و در حال گوش‌دادن به پیام‌هاست.")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
+         
